@@ -50,6 +50,67 @@ func TestLoadAllowlistConfigOverrides(t *testing.T) {
 	}
 }
 
+func TestLoadServerConfigDefaults(t *testing.T) {
+	cfg, err := loadServerConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.publicAddr != ":8080" {
+		t.Errorf("publicAddr = %q, want :8080", cfg.publicAddr)
+	}
+	if cfg.privateAddr != ":9090" {
+		t.Errorf("privateAddr = %q, want :9090", cfg.privateAddr)
+	}
+	if cfg.tlsEnabled() {
+		t.Error("expected TLS disabled by default")
+	}
+}
+
+func TestLoadServerConfigTLS(t *testing.T) {
+	t.Setenv("TLS_CERT_FILE", "/etc/certs/tls.crt")
+	t.Setenv("TLS_KEY_FILE", "/etc/certs/tls.key")
+
+	cfg, err := loadServerConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !cfg.tlsEnabled() {
+		t.Error("expected TLS enabled when both cert and key are set")
+	}
+	if cfg.tlsCertFile != "/etc/certs/tls.crt" {
+		t.Errorf("tlsCertFile = %q, want /etc/certs/tls.crt", cfg.tlsCertFile)
+	}
+	if cfg.tlsKeyFile != "/etc/certs/tls.key" {
+		t.Errorf("tlsKeyFile = %q, want /etc/certs/tls.key", cfg.tlsKeyFile)
+	}
+}
+
+func TestLoadServerConfigTLSRequiresBoth(t *testing.T) {
+	tests := map[string]struct {
+		certFile string
+		keyFile  string
+	}{
+		"cert without key": {certFile: "/etc/certs/tls.crt"},
+		"key without cert": {keyFile: "/etc/certs/tls.key"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			if tc.certFile != "" {
+				t.Setenv("TLS_CERT_FILE", tc.certFile)
+			}
+			if tc.keyFile != "" {
+				t.Setenv("TLS_KEY_FILE", tc.keyFile)
+			}
+			if _, err := loadServerConfig(); err == nil {
+				t.Fatal("expected an error when only one of TLS_CERT_FILE/TLS_KEY_FILE is set")
+			}
+		})
+	}
+}
+
 func TestLoadAllowlistConfigInvalidValues(t *testing.T) {
 	tests := map[string]struct {
 		envKey string

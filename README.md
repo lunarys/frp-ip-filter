@@ -11,8 +11,8 @@ go build .
 ```
 
 Runs two HTTP listeners:
-- a **public** one (default `:8080`) that clients use to register themselves
-- a **private** one (default `:9090`), meant to be reached only by your frps server, not the internet
+- a **public** one (default `:8080`) that clients use to register themselves — terminates TLS itself if `TLS_CERT_FILE`/`TLS_KEY_FILE` are set (see Configuration below); there's no reverse proxy in front of it, so set these unless you have one
+- a **private** one (default `:9090`), meant to be reached only by your frps server, not the internet — always plain HTTP
 
 ## Registering access
 
@@ -45,6 +45,8 @@ All configuration is via environment variables; there is no config file to edit.
 |---|---|---|
 | `PUBLIC_ADDR` | `:8080` | Address the public listener binds to |
 | `PRIVATE_ADDR` | `:9090` | Address the private listener binds to |
+| `TLS_CERT_FILE` | *(none)* | Path to a PEM certificate (full chain) for the public listener. Must be set together with `TLS_KEY_FILE`, or not at all |
+| `TLS_KEY_FILE` | *(none)* | Path to the matching PEM private key |
 | `IP_TOKENS` | *(none)* | Comma-separated tokens valid for `/unlock` |
 | `IP_TOKEN_<N>` | *(none)* | Same, one per env var (e.g. `IP_TOKEN_1`, `IP_TOKEN_2`, ...) — combined with `IP_TOKENS` |
 | `DYNDNS_LOGINS` | *(none)* | Comma-separated `user:pass` pairs valid for `/dyndns` |
@@ -64,6 +66,8 @@ ALLOWLIST_IP_TTL=12h
 ```
 
 The process refuses to start if a configured value is malformed (e.g. `ALLOWLIST_MAX_IPS=abc`), rather than silently ignoring it.
+
+The cert/key files are watched for changes: if something else (e.g. certbot) renews them in place, the new cert is picked up automatically on the next TLS handshake, no restart needed.
 
 ## Connecting it to frp
 

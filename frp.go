@@ -86,10 +86,18 @@ func (p *proxyFilters) isEnabled(proxyName string) bool {
 	return enabled
 }
 
+// maxPluginBodyBytes caps request bodies on the frps plugin hook. Real
+// payloads are small JSON objects (proxy names, addresses, a metas map);
+// this leaves generous headroom while preventing an oversized body from
+// being decoded into memory.
+const maxPluginBodyBytes = 64 * 1024
+
 // frpPluginHandler implements the frps server-plugin HTTP hook. Non-200
 // signals a plugin failure to frps, so malformed requests get a 4xx; an
 // actual filtering decision is always a 200 with reject/unchange in the body.
 func (s *server) frpPluginHandler(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxPluginBodyBytes)
+
 	var req pluginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request", http.StatusBadRequest)

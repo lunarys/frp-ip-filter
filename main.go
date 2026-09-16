@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"log"
 	"net/http"
@@ -35,7 +36,10 @@ func main() {
 
 	srv := &server{allowlist: list, auth: authCfg, logging: loggingCfg, proxyFilters: newProxyFilters()}
 
-	serverCfg := loadServerConfig()
+	serverCfg, err := loadServerConfig()
+	if err != nil {
+		log.Fatalf("load server config: %v", err)
+	}
 
 	muxPrivate := http.NewServeMux()
 	muxPublic := http.NewServeMux()
@@ -53,6 +57,15 @@ func main() {
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
 		IdleTimeout:       60 * time.Second,
+		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12},
+	}
+
+	if serverCfg.tlsEnabled() {
+		cert, err := newReloadingCert(serverCfg.tlsCertFile, serverCfg.tlsKeyFile)
+		if err != nil {
+			log.Fatalf("load TLS cert: %v", err)
+		}
+		publicSrv.TLSConfig.GetCertificate = cert.GetCertificate
 	}
 
 	privateSrv := &http.Server{
@@ -70,7 +83,14 @@ func main() {
 	errCh := make(chan error, 2)
 
 	go func() {
-		log.Printf("Starting public server on %s", serverCfg.publicAddr)
+		if serverCfg.tlsEnabled() {
+			log.Printf("Starting public server on %s (TLS enabled)", serverCfg.publicAddr)
+			// Empty paths: publicSrv.TLSConfig.GetCertificate is already set, so
+			// ListenAndServeTLS uses that instead of loading a static cert itself.
+			errCh <- publicSrv.ListenAndServeTLS("", "")
+			return
+		}
+		log.Printf("Starting public server on %s (TLS disabled)", serverCfg.publicAddr)
 		errCh <- publicSrv.ListenAndServe()
 	}()
 

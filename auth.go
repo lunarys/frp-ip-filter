@@ -38,11 +38,13 @@ func (c *authConfig) validateToken(token string) bool {
 }
 
 func (c *authConfig) validateLogin(username, password string) bool {
+	// Always run the comparison, even for an unknown username, rather than
+	// short-circuiting on the map lookup - otherwise an unknown username
+	// returns measurably faster than a known one with a wrong password,
+	// letting a timing attack enumerate valid usernames.
 	expected, ok := c.logins[username]
-	if !ok {
-		return false
-	}
-	return subtle.ConstantTimeCompare([]byte(password), []byte(expected)) == 1
+	match := subtle.ConstantTimeCompare([]byte(password), []byte(expected)) == 1
+	return ok && match
 }
 
 func loadIPTokens() []string {

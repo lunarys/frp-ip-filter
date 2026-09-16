@@ -56,9 +56,15 @@ func loadAllowlistConfig() (*allowlistConfig, error) {
 type serverConfig struct {
 	publicAddr  string
 	privateAddr string
+	tlsCertFile string
+	tlsKeyFile  string
 }
 
-func loadServerConfig() *serverConfig {
+func (c *serverConfig) tlsEnabled() bool {
+	return c.tlsCertFile != ""
+}
+
+func loadServerConfig() (*serverConfig, error) {
 	cfg := &serverConfig{
 		publicAddr:  ":8080",
 		privateAddr: ":9090",
@@ -71,7 +77,13 @@ func loadServerConfig() *serverConfig {
 		cfg.privateAddr = v
 	}
 
-	return cfg
+	cfg.tlsCertFile = os.Getenv("TLS_CERT_FILE")
+	cfg.tlsKeyFile = os.Getenv("TLS_KEY_FILE")
+	if (cfg.tlsCertFile == "") != (cfg.tlsKeyFile == "") {
+		return nil, fmt.Errorf("TLS_CERT_FILE and TLS_KEY_FILE must both be set, or neither")
+	}
+
+	return cfg, nil
 }
 
 type loggingConfig struct {

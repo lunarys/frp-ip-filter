@@ -139,6 +139,22 @@ func TestFrpPluginCloseProxyResetsToFilteredByDefault(t *testing.T) {
 	}
 }
 
+func TestFrpPluginHandlerRejectsOversizedBody(t *testing.T) {
+	s := newTestServer(t)
+
+	oversized := strings.Repeat("a", maxPluginBodyBytes+1)
+	body := `{"version":"0.1.0","op":"Login","content":"` + oversized + `"}`
+
+	req := httptest.NewRequest("POST", "/frp-plugin", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	s.frpPluginHandler(rec, req)
+
+	if rec.Code != 400 {
+		t.Fatalf("expected 400 for oversized body, got %d", rec.Code)
+	}
+}
+
 func TestFrpPluginUnhandledOpAllowsUnchanged(t *testing.T) {
 	s := newTestServer(t)
 
