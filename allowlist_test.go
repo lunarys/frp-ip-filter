@@ -54,10 +54,10 @@ func TestAddIPExpirySweepFreesCapacity(t *testing.T) {
 	if err := a.AddIP(ip2); err != nil {
 		t.Fatalf("AddIP(ip2) after ip1 expiry: %v", err)
 	}
-	if a.IsAllowed(ip1) {
+	if isAllowed(a, ip1) {
 		t.Fatal("ip1 should have expired")
 	}
-	if !a.IsAllowed(ip2) {
+	if !isAllowed(a, ip2) {
 		t.Fatal("ip2 should be allowed")
 	}
 }
@@ -72,13 +72,13 @@ func TestIsAllowedExpiry(t *testing.T) {
 	if err := a.AddIP(ip); err != nil {
 		t.Fatal(err)
 	}
-	if !a.IsAllowed(ip) {
+	if !isAllowed(a, ip) {
 		t.Fatal("ip should be allowed immediately after add")
 	}
 
 	time.Sleep(5 * time.Millisecond)
 
-	if a.IsAllowed(ip) {
+	if isAllowed(a, ip) {
 		t.Fatal("ip should no longer be allowed after TTL expiry")
 	}
 }
@@ -106,11 +106,35 @@ func TestAddPrefixUpsert(t *testing.T) {
 	inP1 := netip.MustParseAddr("2001:db8:1::1")
 	inP2 := netip.MustParseAddr("2001:db8:2::1")
 
-	if a.IsAllowed(inP1) {
+	if isAllowed(a, inP1) {
 		t.Fatal("old prefix should have been replaced")
 	}
-	if !a.IsAllowed(inP2) {
+	if !isAllowed(a, inP2) {
 		t.Fatal("new prefix should be allowed")
+	}
+}
+
+func TestIsAllowedReturnsLoginOnlyForPrefixMatch(t *testing.T) {
+	a, err := newAllowlist(filepath.Join(t.TempDir(), "allowlist.json"), 10, time.Hour, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ip := netip.MustParseAddr("10.0.0.1")
+	if err := a.AddIP(ip); err != nil {
+		t.Fatal(err)
+	}
+	if allowed, login := a.IsAllowed(ip); !allowed || login != "" {
+		t.Fatalf("directly registered IP: got allowed=%v login=%q, want allowed=true login=\"\"", allowed, login)
+	}
+
+	prefix := netip.MustParsePrefix("2001:db8::/32")
+	if err := a.AddPrefix("dave", prefix); err != nil {
+		t.Fatal(err)
+	}
+	addr := netip.MustParseAddr("2001:db8::1")
+	if allowed, login := a.IsAllowed(addr); !allowed || login != "dave" {
+		t.Fatalf("prefix match: got allowed=%v login=%q, want allowed=true login=%q", allowed, login, "dave")
 	}
 }
 
@@ -126,13 +150,13 @@ func TestPrefixExpiry(t *testing.T) {
 	}
 
 	addr := netip.MustParseAddr("2001:db8::1")
-	if !a.IsAllowed(addr) {
+	if !isAllowed(a, addr) {
 		t.Fatal("should be allowed immediately after add")
 	}
 
 	time.Sleep(5 * time.Millisecond)
 
-	if a.IsAllowed(addr) {
+	if isAllowed(a, addr) {
 		t.Fatal("prefix should have expired")
 	}
 }
@@ -160,10 +184,10 @@ func TestPersistenceRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !reloaded.IsAllowed(ip) {
+	if !isAllowed(reloaded, ip) {
 		t.Fatal("reloaded allowlist should still allow the persisted IP")
 	}
-	if !reloaded.IsAllowed(netip.MustParseAddr("2001:db8::1")) {
+	if !isAllowed(reloaded, netip.MustParseAddr("2001:db8::1")) {
 		t.Fatal("reloaded allowlist should still allow the persisted prefix")
 	}
 }
@@ -188,7 +212,7 @@ func TestPersistenceSkipsExpiredOnLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if reloaded.IsAllowed(ip) {
+	if isAllowed(reloaded, ip) {
 		t.Fatal("expired entry should not survive reload")
 	}
 }
@@ -212,4 +236,9 @@ func TestNewAllowlistCorruptFileStartsEmpty(t *testing.T) {
 
 func writeFile(path, contents string) error {
 	return os.WriteFile(path, []byte(contents), 0o644)
+}
+
+func isAllowed(a *allowlist, ip netip.Addr) bool {
+	allowed, _ := a.IsAllowed(ip)
+	return allowed
 }

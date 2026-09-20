@@ -111,7 +111,7 @@ func (s *server) frpPluginHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid content", http.StatusBadRequest)
 			return
 		}
-		s.writePluginResponse(w, s.checkAddr("Login", content.ClientAddress))
+		s.writePluginResponse(w, s.checkAddr("Login", content.ClientAddress, ""))
 
 	case "NewProxy":
 		var content newProxyContent
@@ -143,7 +143,7 @@ func (s *server) frpPluginHandler(w http.ResponseWriter, r *http.Request) {
 			s.writePluginResponse(w, pluginResponse{Unchange: true})
 			return
 		}
-		s.writePluginResponse(w, s.checkAddr("NewUserConn", content.RemoteAddr))
+		s.writePluginResponse(w, s.checkAddr("NewUserConn", content.RemoteAddr, content.ProxyName))
 
 	default:
 		s.logFrpDebug("op=%s (unhandled, allowing unchanged)", req.Op)
@@ -152,26 +152,46 @@ func (s *server) frpPluginHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // checkAddr rejects unless addr's host is covered by the allowlist. addr may
-// be "host:port" (as frp sends it) or a bare host.
-func (s *server) checkAddr(op, addr string) pluginResponse {
+// be "host:port" (as frp sends it) or a bare host. proxyName is logged when
+// available (it's unknown at Login time, since no proxy is involved yet). On
+// an allow, the dyndns login that registered the matching prefix is logged
+// too, if the match came from a prefix rather than a plain registered IP -
+// a rejection never has a login to show, since nothing matched.
+func (s *server) checkAddr(op, addr, proxyName string) pluginResponse {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		host = addr
 	}
+	ctx := proxyField(proxyName)
 
 	ip, err := netip.ParseAddr(host)
 	if err != nil {
-		s.logFrpDebug("op=%s addr=%q: could not parse address", op, addr)
+		s.logFrpDebug("op=%s addr=%q%s: could not parse address", op, addr, ctx)
 		return pluginResponse{Reject: true, RejectReason: "could not parse address"}
 	}
 
-	if !s.allowlist.IsAllowed(ip) {
-		s.logFrpDebug("op=%s ip=%s: rejected", op, ip)
+	allowed, login := s.allowlist.IsAllowed(ip)
+	if !allowed {
+		s.logFrpDebug("op=%s ip=%s%s: rejected", op, ip, ctx)
 		return pluginResponse{Reject: true, RejectReason: "IP not allowed"}
 	}
 
-	s.logFrpDebug("op=%s ip=%s: allowed", op, ip)
+	s.logFrpDebug("op=%s ip=%s%s: allowed%s", op, ip, ctx, loginSuffix(login))
 	return pluginResponse{Unchange: true}
+}
+
+func proxyField(proxyName string) string {
+	if proxyName == "" {
+		return ""
+	}
+	return " proxy=" + proxyName
+}
+
+func loginSuffix(login string) string {
+	if login == "" {
+		return ""
+	}
+	return " (" + login + ")"
 }
 
 func (s *server) writePluginResponse(w http.ResponseWriter, resp pluginResponse) {

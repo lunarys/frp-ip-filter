@@ -125,8 +125,10 @@ func (a *allowlist) AddPrefix(login string, prefix netip.Prefix) error {
 
 // IsAllowed reports whether ip is covered by a live IP entry or a live
 // prefix. It only touches entries it actually visits (no full sweep), since
-// this is the hot path called on every incoming connection.
-func (a *allowlist) IsAllowed(ip netip.Addr) bool {
+// this is the hot path called on every incoming connection. When ip matches
+// a prefix, it also returns the dyndns login that registered it; a plain
+// registered IP has no associated login, so that case returns "".
+func (a *allowlist) IsAllowed(ip netip.Addr) (bool, string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -134,7 +136,7 @@ func (a *allowlist) IsAllowed(ip netip.Addr) bool {
 
 	if entry, ok := a.ips[ip]; ok {
 		if now.Sub(entry.LastUpdated) <= a.ipTTL {
-			return true
+			return true, ""
 		}
 		delete(a.ips, ip)
 	}
@@ -145,11 +147,11 @@ func (a *allowlist) IsAllowed(ip netip.Addr) bool {
 			continue
 		}
 		if entry.Prefix.Contains(ip) {
-			return true
+			return true, login
 		}
 	}
 
-	return false
+	return false, ""
 }
 
 func (a *allowlist) sweepIPsLocked(now time.Time) {
