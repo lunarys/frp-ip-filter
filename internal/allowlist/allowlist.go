@@ -202,17 +202,17 @@ func (a *List) persistLocked() error {
 	tmpName := tmp.Name()
 
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("write temp allowlist file: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("close temp allowlist file: %w", err)
 	}
 
 	if err := os.Rename(tmpName, a.path); err != nil {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("rename allowlist file: %w", err)
 	}
 

@@ -43,7 +43,8 @@ func (s *Server) frpPluginHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.proxyFilters.Set(content.ProxyName, content.Metas)
-		s.logFrpDebug("op=NewProxy proxy=%s filter_enabled=%v", content.ProxyName, s.proxyFilters.IsEnabled(content.ProxyName))
+		s.logFrpDebug("op=NewProxy proxy=%s filter_enabled=%v",
+			content.ProxyName, s.proxyFilters.IsEnabled(content.ProxyName))
 		s.writePluginResponse(w, frpplugin.Response{Unchange: true})
 
 	case "CloseProxy":

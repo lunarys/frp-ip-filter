@@ -90,7 +90,10 @@ func TestFrpPluginLoginRejected(t *testing.T) {
 func TestFrpPluginNewUserConnRejected(t *testing.T) {
 	s := newTestServer(t)
 
-	resp := doPluginRequest(t, s, "NewUserConn", frpplugin.NewUserConnContent{ProxyName: "web", RemoteAddr: "203.0.113.5:1234"})
+	resp := doPluginRequest(t, s, "NewUserConn", frpplugin.NewUserConnContent{
+		ProxyName:  "web",
+		RemoteAddr: "203.0.113.5:1234",
+	})
 
 	if !resp.Reject {
 		t.Fatal("expected reject for unlisted visitor IP")
@@ -102,7 +105,10 @@ func TestFrpPluginNewUserConnFilteredByDefault(t *testing.T) {
 
 	// No NewProxy seen for "web" yet - opt-out policy means it's filtered by
 	// default, so an unlisted visitor IP is still rejected.
-	resp := doPluginRequest(t, s, "NewUserConn", frpplugin.NewUserConnContent{ProxyName: "web", RemoteAddr: "203.0.113.5:1234"})
+	resp := doPluginRequest(t, s, "NewUserConn", frpplugin.NewUserConnContent{
+		ProxyName:  "web",
+		RemoteAddr: "203.0.113.5:1234",
+	})
 
 	if !resp.Reject {
 		t.Fatal("expected proxy with no known metadata to be filtered by default")
@@ -120,7 +126,10 @@ func TestFrpPluginNewProxyOptsOutOfFiltering(t *testing.T) {
 		t.Fatal("NewProxy should never be rejected by this plugin")
 	}
 
-	resp := doPluginRequest(t, s, "NewUserConn", frpplugin.NewUserConnContent{ProxyName: "public-site", RemoteAddr: "203.0.113.5:1234"})
+	resp := doPluginRequest(t, s, "NewUserConn", frpplugin.NewUserConnContent{
+		ProxyName:  "public-site",
+		RemoteAddr: "203.0.113.5:1234",
+	})
 
 	if resp.Reject {
 		t.Fatal("expected proxy that opted out via metadata to allow unlisted visitor IPs")
@@ -136,7 +145,10 @@ func TestFrpPluginCloseProxyResetsToFilteredByDefault(t *testing.T) {
 	})
 	doPluginRequest(t, s, "CloseProxy", frpplugin.CloseProxyContent{ProxyName: "public-site"})
 
-	resp := doPluginRequest(t, s, "NewUserConn", frpplugin.NewUserConnContent{ProxyName: "public-site", RemoteAddr: "203.0.113.5:1234"})
+	resp := doPluginRequest(t, s, "NewUserConn", frpplugin.NewUserConnContent{
+		ProxyName:  "public-site",
+		RemoteAddr: "203.0.113.5:1234",
+	})
 
 	if !resp.Reject {
 		t.Fatal("expected proxy to revert to filtered-by-default after CloseProxy")
