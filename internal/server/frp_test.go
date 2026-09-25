@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"encoding/json"
@@ -8,21 +8,25 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/lunarys/frp-ip-filter/internal/allowlist"
+	"github.com/lunarys/frp-ip-filter/internal/auth"
+	"github.com/lunarys/frp-ip-filter/internal/frpplugin"
 )
 
-func newTestServer(t *testing.T) *server {
+func newTestServer(t *testing.T) *Server {
 	t.Helper()
-	list, err := newAllowlist(filepath.Join(t.TempDir(), "allowlist.json"), 10, time.Hour, time.Hour)
+	list, err := allowlist.New(filepath.Join(t.TempDir(), "allowlist.json"), 10, time.Hour, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &server{allowlist: list, auth: &authConfig{}, logging: &loggingConfig{}, proxyFilters: newProxyFilters()}
+	return New(list, auth.New(nil, nil), Logging{})
 }
 
-func doPluginRequest(t *testing.T, s *server, op string, content any) pluginResponse {
+func doPluginRequest(t *testing.T, s *Server, op string, content any) frpplugin.Response {
 	t.Helper()
 
-	body, err := json.Marshal(pluginRequest{
+	body, err := json.Marshal(frpplugin.Request{
 		Version: "0.1.0",
 		Op:      op,
 		Content: mustMarshal(t, content),
@@ -40,7 +44,7 @@ func doPluginRequest(t *testing.T, s *server, op string, content any) pluginResp
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var resp pluginResponse
+	var resp frpplugin.Response
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
@@ -63,7 +67,7 @@ func TestFrpPluginLoginAllowed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resp := doPluginRequest(t, s, "Login", loginContent{ClientAddress: "10.0.0.1:54321"})
+	resp := doPluginRequest(t, s, "Login", frpplugin.LoginContent{ClientAddress: "10.0.0.1:54321"})
 
 	if resp.Reject {
 		t.Fatalf("expected allowed, got reject: %s", resp.RejectReason)
@@ -76,7 +80,7 @@ func TestFrpPluginLoginAllowed(t *testing.T) {
 func TestFrpPluginLoginRejected(t *testing.T) {
 	s := newTestServer(t)
 
-	resp := doPluginRequest(t, s, "Login", loginContent{ClientAddress: "10.0.0.99:54321"})
+	resp := doPluginRequest(t, s, "Login", frpplugin.LoginContent{ClientAddress: "10.0.0.99:54321"})
 
 	if !resp.Reject {
 		t.Fatal("expected reject for unlisted IP")
@@ -86,7 +90,7 @@ func TestFrpPluginLoginRejected(t *testing.T) {
 func TestFrpPluginNewUserConnRejected(t *testing.T) {
 	s := newTestServer(t)
 
-	resp := doPluginRequest(t, s, "NewUserConn", newUserConnContent{ProxyName: "web", RemoteAddr: "203.0.113.5:1234"})
+	resp := doPluginRequest(t, s, "NewUserConn", frpplugin.NewUserConnContent{ProxyName: "web", RemoteAddr: "203.0.113.5:1234"})
 
 	if !resp.Reject {
 		t.Fatal("expected reject for unlisted visitor IP")
@@ -98,7 +102,7 @@ func TestFrpPluginNewUserConnFilteredByDefault(t *testing.T) {
 
 	// No NewProxy seen for "web" yet - opt-out policy means it's filtered by
 	// default, so an unlisted visitor IP is still rejected.
-	resp := doPluginRequest(t, s, "NewUserConn", newUserConnContent{ProxyName: "web", RemoteAddr: "203.0.113.5:1234"})
+	resp := doPluginRequest(t, s, "NewUserConn", frpplugin.NewUserConnContent{ProxyName: "web", RemoteAddr: "203.0.113.5:1234"})
 
 	if !resp.Reject {
 		t.Fatal("expected proxy with no known metadata to be filtered by default")
@@ -108,7 +112,7 @@ func TestFrpPluginNewUserConnFilteredByDefault(t *testing.T) {
 func TestFrpPluginNewProxyOptsOutOfFiltering(t *testing.T) {
 	s := newTestServer(t)
 
-	newProxyResp := doPluginRequest(t, s, "NewProxy", newProxyContent{
+	newProxyResp := doPluginRequest(t, s, "NewProxy", frpplugin.NewProxyContent{
 		ProxyName: "public-site",
 		Metas:     map[string]string{"ip_filter": "false"},
 	})
@@ -116,7 +120,7 @@ func TestFrpPluginNewProxyOptsOutOfFiltering(t *testing.T) {
 		t.Fatal("NewProxy should never be rejected by this plugin")
 	}
 
-	resp := doPluginRequest(t, s, "NewUserConn", newUserConnContent{ProxyName: "public-site", RemoteAddr: "203.0.113.5:1234"})
+	resp := doPluginRequest(t, s, "NewUserConn", frpplugin.NewUserConnContent{ProxyName: "public-site", RemoteAddr: "203.0.113.5:1234"})
 
 	if resp.Reject {
 		t.Fatal("expected proxy that opted out via metadata to allow unlisted visitor IPs")
@@ -126,13 +130,13 @@ func TestFrpPluginNewProxyOptsOutOfFiltering(t *testing.T) {
 func TestFrpPluginCloseProxyResetsToFilteredByDefault(t *testing.T) {
 	s := newTestServer(t)
 
-	doPluginRequest(t, s, "NewProxy", newProxyContent{
+	doPluginRequest(t, s, "NewProxy", frpplugin.NewProxyContent{
 		ProxyName: "public-site",
 		Metas:     map[string]string{"ip_filter": "false"},
 	})
-	doPluginRequest(t, s, "CloseProxy", closeProxyContent{ProxyName: "public-site"})
+	doPluginRequest(t, s, "CloseProxy", frpplugin.CloseProxyContent{ProxyName: "public-site"})
 
-	resp := doPluginRequest(t, s, "NewUserConn", newUserConnContent{ProxyName: "public-site", RemoteAddr: "203.0.113.5:1234"})
+	resp := doPluginRequest(t, s, "NewUserConn", frpplugin.NewUserConnContent{ProxyName: "public-site", RemoteAddr: "203.0.113.5:1234"})
 
 	if !resp.Reject {
 		t.Fatal("expected proxy to revert to filtered-by-default after CloseProxy")

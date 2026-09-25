@@ -1,4 +1,4 @@
-package main
+package allowlist
 
 import (
 	"errors"
@@ -10,7 +10,7 @@ import (
 )
 
 func TestAddIPCapacity(t *testing.T) {
-	a, err := newAllowlist(filepath.Join(t.TempDir(), "allowlist.json"), 2, time.Hour, time.Hour)
+	a, err := New(filepath.Join(t.TempDir(), "allowlist.json"), 2, time.Hour, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func TestAddIPCapacity(t *testing.T) {
 }
 
 func TestAddIPExpirySweepFreesCapacity(t *testing.T) {
-	a, err := newAllowlist(filepath.Join(t.TempDir(), "allowlist.json"), 1, time.Millisecond, time.Hour)
+	a, err := New(filepath.Join(t.TempDir(), "allowlist.json"), 1, time.Millisecond, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestAddIPExpirySweepFreesCapacity(t *testing.T) {
 }
 
 func TestIsAllowedExpiry(t *testing.T) {
-	a, err := newAllowlist(filepath.Join(t.TempDir(), "allowlist.json"), 10, time.Millisecond, time.Hour)
+	a, err := New(filepath.Join(t.TempDir(), "allowlist.json"), 10, time.Millisecond, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestIsAllowedExpiry(t *testing.T) {
 }
 
 func TestAddPrefixUpsert(t *testing.T) {
-	a, err := newAllowlist(filepath.Join(t.TempDir(), "allowlist.json"), 10, time.Hour, time.Hour)
+	a, err := New(filepath.Join(t.TempDir(), "allowlist.json"), 10, time.Hour, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestAddPrefixUpsert(t *testing.T) {
 }
 
 func TestIsAllowedReturnsLoginOnlyForPrefixMatch(t *testing.T) {
-	a, err := newAllowlist(filepath.Join(t.TempDir(), "allowlist.json"), 10, time.Hour, time.Hour)
+	a, err := New(filepath.Join(t.TempDir(), "allowlist.json"), 10, time.Hour, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestIsAllowedReturnsLoginOnlyForPrefixMatch(t *testing.T) {
 }
 
 func TestPrefixExpiry(t *testing.T) {
-	a, err := newAllowlist(filepath.Join(t.TempDir(), "allowlist.json"), 10, time.Hour, time.Millisecond)
+	a, err := New(filepath.Join(t.TempDir(), "allowlist.json"), 10, time.Hour, time.Millisecond)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestPrefixExpiry(t *testing.T) {
 func TestPersistenceRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "allowlist.json")
 
-	a, err := newAllowlist(path, 10, time.Hour, time.Hour)
+	a, err := New(path, 10, time.Hour, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +179,7 @@ func TestPersistenceRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reloaded, err := newAllowlist(path, 10, time.Hour, time.Hour)
+	reloaded, err := New(path, 10, time.Hour, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +195,7 @@ func TestPersistenceRoundTrip(t *testing.T) {
 func TestPersistenceSkipsExpiredOnLoad(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "allowlist.json")
 
-	a, err := newAllowlist(path, 10, time.Millisecond, time.Millisecond)
+	a, err := New(path, 10, time.Millisecond, time.Millisecond)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestPersistenceSkipsExpiredOnLoad(t *testing.T) {
 
 	time.Sleep(5 * time.Millisecond)
 
-	reloaded, err := newAllowlist(path, 10, time.Millisecond, time.Millisecond)
+	reloaded, err := New(path, 10, time.Millisecond, time.Millisecond)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,9 +225,9 @@ func TestNewAllowlistCorruptFileStartsEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a, err := newAllowlist(path, 10, time.Hour, time.Hour)
+	a, err := New(path, 10, time.Hour, time.Hour)
 	if err != nil {
-		t.Fatalf("newAllowlist should tolerate a corrupt file, got error: %v", err)
+		t.Fatalf("New should tolerate a corrupt file, got error: %v", err)
 	}
 	if len(a.ips) != 0 || len(a.prefixes) != 0 {
 		t.Fatal("expected empty allowlist after corrupt file")
@@ -238,7 +238,7 @@ func writeFile(path, contents string) error {
 	return os.WriteFile(path, []byte(contents), 0o644)
 }
 
-func isAllowed(a *allowlist, ip netip.Addr) bool {
+func isAllowed(a *List, ip netip.Addr) bool {
 	allowed, _ := a.IsAllowed(ip)
 	return allowed
 }

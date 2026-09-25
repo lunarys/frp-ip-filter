@@ -1,4 +1,4 @@
-package main
+package tlscert
 
 import (
 	"bytes"
@@ -17,7 +17,7 @@ import (
 
 // generateSelfSignedCert produces a fresh self-signed cert/key pair each
 // call (distinct serial + key), so two calls are guaranteed to differ - used
-// to tell which one reloadingCert is currently serving.
+// to tell which one Reloader is currently serving.
 func generateSelfSignedCert(t *testing.T) (certPEM, keyPEM []byte) {
 	t.Helper()
 
@@ -73,7 +73,7 @@ func TestReloadingCertReloadsAfterFileChanges(t *testing.T) {
 	certA, keyA := generateSelfSignedCert(t)
 	writeCert(t, certPath, keyPath, certA, keyA)
 
-	r, err := newReloadingCert(certPath, keyPath)
+	r, err := New(certPath, keyPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestReloadingCertKeepsServingOldCertIfReloadFails(t *testing.T) {
 	certA, keyA := generateSelfSignedCert(t)
 	writeCert(t, certPath, keyPath, certA, keyA)
 
-	r, err := newReloadingCert(certPath, keyPath)
+	r, err := New(certPath, keyPath)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,4 +1,6 @@
-package main
+// Package allowlist stores the IPs and prefixes allowed through the filter,
+// with sliding TTLs and atomic persistence to a JSON file.
+package allowlist
 
 import (
 	"encoding/json"
@@ -24,18 +26,18 @@ type prefixEntry struct {
 	LastUpdated time.Time    `json:"last_updated"`
 }
 
-// allowlistFile is the on-disk shape, kept separate from allowlist's in-memory
+// allowlistFile is the on-disk shape, kept separate from List's in-memory
 // maps since netip.Addr can't be a JSON object key.
 type allowlistFile struct {
 	IPs      map[string]ipEntry     `json:"ips"`
 	Prefixes map[string]prefixEntry `json:"prefixes"`
 }
 
-// allowlist tracks IPs and IPv6 prefixes permitted to reach the private
+// List tracks IPs and IPv6 prefixes permitted to reach the private
 // listener. Entries use a sliding TTL: any add/update resets the clock, so
 // ipTTL/prefixTTL can be reconfigured and apply retroactively to existing
 // entries (expiry is derived from LastUpdated, never stored directly).
-type allowlist struct {
+type List struct {
 	mu        sync.Mutex
 	ips       map[netip.Addr]ipEntry
 	prefixes  map[string]prefixEntry // keyed by login identity, one entry each
@@ -45,8 +47,11 @@ type allowlist struct {
 	path      string
 }
 
-func newAllowlist(path string, maxIPs int, ipTTL, prefixTTL time.Duration) (*allowlist, error) {
-	a := &allowlist{
+// New creates a List persisted at path, loading any live entries already
+// stored there. A missing file starts empty; a corrupt one is logged and
+// also starts empty rather than failing startup.
+func New(path string, maxIPs int, ipTTL, prefixTTL time.Duration) (*List, error) {
+	a := &List{
 		ips:       make(map[netip.Addr]ipEntry),
 		prefixes:  make(map[string]prefixEntry),
 		maxIPs:    maxIPs,
@@ -93,7 +98,7 @@ func newAllowlist(path string, maxIPs int, ipTTL, prefixTTL time.Duration) (*all
 
 // AddIP registers ip, refreshing its TTL if already present. It sweeps
 // expired IPs first, so the cap check always reflects only live entries.
-func (a *allowlist) AddIP(ip netip.Addr) error {
+func (a *List) AddIP(ip netip.Addr) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -111,7 +116,7 @@ func (a *allowlist) AddIP(ip netip.Addr) error {
 
 // AddPrefix upserts the prefix for login, refreshing its TTL. No cap check:
 // this is naturally bounded by the number of distinct logins.
-func (a *allowlist) AddPrefix(login string, prefix netip.Prefix) error {
+func (a *List) AddPrefix(login string, prefix netip.Prefix) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -128,7 +133,7 @@ func (a *allowlist) AddPrefix(login string, prefix netip.Prefix) error {
 // this is the hot path called on every incoming connection. When ip matches
 // a prefix, it also returns the dyndns login that registered it; a plain
 // registered IP has no associated login, so that case returns "".
-func (a *allowlist) IsAllowed(ip netip.Addr) (bool, string) {
+func (a *List) IsAllowed(ip netip.Addr) (bool, string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -154,7 +159,7 @@ func (a *allowlist) IsAllowed(ip netip.Addr) (bool, string) {
 	return false, ""
 }
 
-func (a *allowlist) sweepIPsLocked(now time.Time) {
+func (a *List) sweepIPsLocked(now time.Time) {
 	for ip, entry := range a.ips {
 		if now.Sub(entry.LastUpdated) > a.ipTTL {
 			delete(a.ips, ip)
@@ -162,7 +167,7 @@ func (a *allowlist) sweepIPsLocked(now time.Time) {
 	}
 }
 
-func (a *allowlist) sweepPrefixesLocked(now time.Time) {
+func (a *List) sweepPrefixesLocked(now time.Time) {
 	for login, entry := range a.prefixes {
 		if now.Sub(entry.LastUpdated) > a.prefixTTL {
 			delete(a.prefixes, login)
@@ -173,7 +178,7 @@ func (a *allowlist) sweepPrefixesLocked(now time.Time) {
 // persistLocked writes the current state to disk atomically (temp file +
 // rename), so a crash mid-write never leaves a corrupt file in place.
 // Caller must hold a.mu.
-func (a *allowlist) persistLocked() error {
+func (a *List) persistLocked() error {
 	file := allowlistFile{
 		IPs:      make(map[string]ipEntry, len(a.ips)),
 		Prefixes: make(map[string]prefixEntry, len(a.prefixes)),

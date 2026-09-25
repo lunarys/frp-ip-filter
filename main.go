@@ -10,49 +10,35 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/lunarys/frp-ip-filter/internal/allowlist"
+	"github.com/lunarys/frp-ip-filter/internal/auth"
+	"github.com/lunarys/frp-ip-filter/internal/config"
+	"github.com/lunarys/frp-ip-filter/internal/server"
+	"github.com/lunarys/frp-ip-filter/internal/tlscert"
 )
 
 func main() {
-	authCfg, err := loadAuthConfigFromEnv()
+	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("load auth config: %v", err)
+		log.Fatalf("load config: %v", err)
 	}
-	log.Printf("Loaded auth config: %d IP token(s), %d login(s)", len(authCfg.ipTokens), len(authCfg.logins))
+	log.Printf("Loaded auth config: %d IP token(s), %d login(s)", len(cfg.Auth.IPTokens), len(cfg.Auth.Logins))
 
-	listCfg, err := loadAllowlistConfig()
-	if err != nil {
-		log.Fatalf("load allowlist config: %v", err)
-	}
-
-	list, err := newAllowlist(listCfg.path, listCfg.maxIPs, listCfg.ipTTL, listCfg.prefixTTL)
+	list, err := allowlist.New(cfg.Allowlist.Path, cfg.Allowlist.MaxIPs, cfg.Allowlist.IPTTL, cfg.Allowlist.PrefixTTL)
 	if err != nil {
 		log.Fatalf("load allowlist: %v", err)
 	}
 
-	loggingCfg, err := loadLoggingConfig()
-	if err != nil {
-		log.Fatalf("load logging config: %v", err)
-	}
-
-	srv := &server{allowlist: list, auth: authCfg, logging: loggingCfg, proxyFilters: newProxyFilters()}
-
-	serverCfg, err := loadServerConfig()
-	if err != nil {
-		log.Fatalf("load server config: %v", err)
-	}
-
-	muxPrivate := http.NewServeMux()
-	muxPublic := http.NewServeMux()
-
-	muxPublic.HandleFunc("GET /unlock", srv.registerClient)
-	muxPublic.HandleFunc("GET /dyndns", srv.registerClientPrefix)
-
-	muxPrivate.HandleFunc("POST /frp-plugin", srv.frpPluginHandler)
-	muxPrivate.HandleFunc("GET /healthz", srv.healthCheck)
+	srv := server.New(
+		list,
+		auth.New(cfg.Auth.IPTokens, cfg.Auth.Logins),
+		server.Logging{AccessLog: cfg.Logging.AccessLog, FrpDebug: cfg.Logging.FrpDebug},
+	)
 
 	publicSrv := &http.Server{
-		Addr:              serverCfg.publicAddr,
-		Handler:           muxPublic,
+		Addr:              cfg.Server.PublicAddr,
+		Handler:           srv.PublicHandler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
@@ -60,8 +46,8 @@ func main() {
 		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12},
 	}
 
-	if serverCfg.tlsEnabled() {
-		cert, err := newReloadingCert(serverCfg.tlsCertFile, serverCfg.tlsKeyFile)
+	if cfg.Server.TLSEnabled() {
+		cert, err := tlscert.New(cfg.Server.TLSCertFile, cfg.Server.TLSKeyFile)
 		if err != nil {
 			log.Fatalf("load TLS cert: %v", err)
 		}
@@ -69,8 +55,8 @@ func main() {
 	}
 
 	privateSrv := &http.Server{
-		Addr:              serverCfg.privateAddr,
-		Handler:           muxPrivate,
+		Addr:              cfg.Server.PrivateAddr,
+		Handler:           srv.PrivateHandler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
@@ -83,19 +69,19 @@ func main() {
 	errCh := make(chan error, 2)
 
 	go func() {
-		if serverCfg.tlsEnabled() {
-			log.Printf("Starting public server on %s (TLS enabled)", serverCfg.publicAddr)
+		if cfg.Server.TLSEnabled() {
+			log.Printf("Starting public server on %s (TLS enabled)", cfg.Server.PublicAddr)
 			// Empty paths: publicSrv.TLSConfig.GetCertificate is already set, so
 			// ListenAndServeTLS uses that instead of loading a static cert itself.
 			errCh <- publicSrv.ListenAndServeTLS("", "")
 			return
 		}
-		log.Printf("Starting public server on %s (TLS disabled)", serverCfg.publicAddr)
+		log.Printf("Starting public server on %s (TLS disabled)", cfg.Server.PublicAddr)
 		errCh <- publicSrv.ListenAndServe()
 	}()
 
 	go func() {
-		log.Printf("Starting private server on %s", serverCfg.privateAddr)
+		log.Printf("Starting private server on %s", cfg.Server.PrivateAddr)
 		errCh <- privateSrv.ListenAndServe()
 	}()
 
