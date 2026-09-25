@@ -99,13 +99,11 @@ func main() {
 
 	var wg sync.WaitGroup
 	for _, s := range []*http.Server{publicSrv, privateSrv} {
-		wg.Add(1)
-		go func(s *http.Server) {
-			defer wg.Done()
+		wg.Go(func() {
 			if err := s.Shutdown(shutdownCtx); err != nil {
 				log.Printf("shutdown error on %s: %v", s.Addr, err)
 			}
-		}(s)
+		})
 	}
 	wg.Wait()
 

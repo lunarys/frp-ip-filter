@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -186,9 +187,7 @@ func (a *List) persistLocked() error {
 	for ip, entry := range a.ips {
 		file.IPs[ip.String()] = entry
 	}
-	for login, entry := range a.prefixes {
-		file.Prefixes[login] = entry
-	}
+	maps.Copy(file.Prefixes, a.prefixes)
 
 	data, err := json.MarshalIndent(file, "", "  ")
 	if err != nil {

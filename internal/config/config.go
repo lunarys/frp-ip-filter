@@ -197,7 +197,7 @@ func splitCommaList(s string) []string {
 	}
 
 	var out []string
-	for _, part := range strings.Split(s, ",") {
+	for part := range strings.SplitSeq(s, ",") {
 		part = strings.TrimSpace(part)
 		if part != "" {
 			out = append(out, part)
