@@ -1,0 +1,21 @@
+services:
+  frp-ip-filter:
+    build: .
+    image: frp-ip-filter
+    restart: unless-stopped
+    ports:
+      # Public: this is what clients/DynDNS hit, expose it to the internet.
+      - "8080:8080"
+      # Private: only frps should ever reach this — keep it off the public
+      # interface. If frps runs in another compose service instead, drop
+      # this port mapping entirely and reach it over the compose network at
+      # frp-ip-filter:9090.
+      - "127.0.0.1:9090:9090"
+    # All settings come from .env - copy .env.example to get started.
+    env_file: .env
+    volumes:
+      - frp-ip-filter-data:/data
+      # - ./certs:/certs:ro
+
+volumes:
+  frp-ip-filter-data:

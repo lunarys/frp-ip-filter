@@ -1,0 +1,14 @@
+.git
+Dockerfile
+.dockerignore
+README.md
+frp-ip-filter
+allowlist.json
+*_test.go
+.env
+.env.example
+docker-compose.yml
+.github
+.golangci.yml
+.releaserc.json
+renovate.json

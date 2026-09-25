@@ -1,3 +1,4 @@
 /frp-ip-filter
 *.tmp
 allowlist.json
+.env
