@@ -1,7 +1,7 @@
 ## Build stage
 # Runs on the build host's native platform and cross-compiles for the target
 # via GOOS/GOARCH, so multi-arch builds don't need slow QEMU emulation.
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 
 ARG TARGETOS
 ARG TARGETARCH
